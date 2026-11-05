@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gran Premio de los Decimales - Tablero Posicional</title>
+    
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Carga de React y ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Carga de Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Estilos Personalizados y Animaciones -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;600;800;900&display=swap');
+
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #090914; 
+            font-family: 'Inter', sans-serif;
+        }
+        
+        .font-orbitron { font-family: 'Orbitron', sans-serif; }
+
+        @keyframes confetti-fall {
+            0% { background-position: 0 -200px; }
+            100% { background-position: 0 800px; }
+        }
+        @keyframes grid-flow {
+            0% { background-position: 0 0; }
+            100% { background-position: 0 100px; }
+        }
+        @keyframes speed-line {
+            0% { transform: translateY(0); opacity: 0; }
+            10% { opacity: 0.5; }
+            100% { transform: translateY(120vh); opacity: 0; }
+        }
+        @keyframes animate-flow-energy {
+            from { stroke-dashoffset: 50; }
+            to { stroke-dashoffset: 0; }
+        }
+        
+        .animate-flow-energy { animation: animate-flow-energy 1s linear infinite; }
+        .animate-grid-flow { animation: grid-flow 1.5s linear infinite; }
+        .animate-speed-line { animation: speed-line 2s linear infinite; }
+        .animate-spin-fast { animation: spin 0.15s linear infinite; }
+        
+        .animate-pulse-glow { animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 35px rgba(0, 242, 254, 0.4); transform: scale(1); }
+            50% { box-shadow: 0 0 80px rgba(0, 242, 254, 0.85); transform: scale(1.03); }
+        }
+        
+        .animate-bounce-slow { animation: bounce-slow 3s ease-in-out infinite; }
+        @keyframes bounce-slow {
+            0%, 100% { transform: translateY(-2%); }
+            50% { transform: translateY(2%); }
+        }
+        
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.97); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .animate-fade-in { animation: fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        /* Scrollbar oculta o estilizada para modales */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #00f2fe; border-radius: 4px; }
+        
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- CONSTANTES & CONFIGURACIÓN DE COLORES ---
+        const COLORS = {
+            bgBase: '#090914',
+            primary: '#00f2fe',
+            accent: '#fe0979',
+            track: '#1a1a2e',
+            neonGreen: '#39ff14',
+            neonOrange: '#ff5e00',
+            neonPurple: '#bf00ff',
+            neonYellow: '#facc15',
+            text: '#ffffff',
+        };
+
+        const TILE_TYPES = {
+            START: 'START',
+            NORMAL: 'NORMAL',
+            IMPULSO: 'IMPULSO',     // +2 casillas
+            FRICCION: 'FRICCION',   // Pierde turno
+            CAIDA: 'CAIDA',         // -3 casillas
+            RESORTE: 'RESORTE'      // Salta a meta
+        };
+
+        // Tablero serpenteante de 24 casillas (10x6 Grid)
+        const BOARD_SPACES = [
+            { id: 0,  type: TILE_TYPES.START, label: 'SALIDA', color: '#ffffff', row: 2, col: 0 },
+            { id: 1,  type: TILE_TYPES.NORMAL, label: '1', color: COLORS.primary, row: 1, col: 1, level: 1 },
+            { id: 2,  type: TILE_TYPES.NORMAL, label: '2', color: COLORS.neonGreen, row: 0, col: 2, level: 1 },
+            { id: 3,  type: TILE_TYPES.NORMAL, label: '3', color: COLORS.primary, row: 1, col: 3, level: 1 },
+            { id: 4,  type: TILE_TYPES.IMPULSO, label: '+2', color: COLORS.neonYellow, row: 0, col: 4 }, 
+            { id: 5,  type: TILE_TYPES.NORMAL, label: '5', color: COLORS.neonGreen, row: 1, col: 5, level: 2 },
+            { id: 6,  type: TILE_TYPES.NORMAL, label: '6', color: COLORS.primary, row: 0, col: 6, level: 2 },
+            { id: 7,  type: TILE_TYPES.NORMAL, label: '7', color: COLORS.neonGreen, row: 1, col: 7, level: 2 },
+            { id: 8,  type: TILE_TYPES.NORMAL, label: '8', color: COLORS.accent, row: 0, col: 8, level: 1 },
+            { id: 9,  type: TILE_TYPES.NORMAL, label: '9', color: COLORS.neonOrange, row: 1, col: 9, level: 3 },
+            { id: 10, type: TILE_TYPES.NORMAL, label: '10', color: COLORS.accent, row: 2, col: 9, level: 2 },
+            { id: 11, type: TILE_TYPES.FRICCION, label: 'STOP', color: '#ff0055', row: 3, col: 9 }, 
+            { id: 12, type: TILE_TYPES.NORMAL, label: '12', color: COLORS.primary, row: 4, col: 9, level: 2 },
+            { id: 13, type: TILE_TYPES.NORMAL, label: '13', color: COLORS.neonGreen, row: 5, col: 8, level: 1 },
+            { id: 14, type: TILE_TYPES.NORMAL, label: '14', color: COLORS.primary, row: 4, col: 7, level: 2 },
+            { id: 15, type: TILE_TYPES.NORMAL, label: '15', color: COLORS.neonGreen, row: 5, col: 6, level: 3 },
+            { id: 16, type: TILE_TYPES.CAIDA, label: '-3', color: '#ff0055', row: 4, col: 5 }, 
+            { id: 17, type: TILE_TYPES.NORMAL, label: '17', color: COLORS.primary, row: 5, col: 4, level: 2 },
+            { id: 18, type: TILE_TYPES.NORMAL, label: '18', color: COLORS.neonGreen, row: 4, col: 3, level: 3 },
+            { id: 19, type: TILE_TYPES.RESORTE, label: 'TURBO', color: COLORS.neonPurple, row: 5, col: 2 }, 
+            { id: 20, type: TILE_TYPES.NORMAL, label: '20', color: COLORS.accent, row: 4, col: 1, level: 2 },
+            { id: 21, type: TILE_TYPES.NORMAL, label: '21', color: COLORS.neonOrange, row: 5, col: 0, level: 1 },
+            { id: 22, type: TILE_TYPES.NORMAL, label: '22', color: COLORS.accent, row: 4, col: 0, level: 3 },
+            { id: 23, type: TILE_TYPES.NORMAL, label: '23', color: COLORS.neonOrange, row: 3, col: 0, level: 2 },
+        ];
+
+        const buildPath = () => {
+            let path = '';
+            BOARD_SPACES.forEach((tile, idx) => {
+                const x = (tile.col + 0.5) * (100 / 10);
+                const y = (tile.row + 0.5) * (100 / 6);
+                if (idx === 0) path += `M ${x} ${y} `;
+                else path += `L ${x} ${y} `;
+            });
+            path += 'Z';
+            return path;
+        };
+
+        const BOARD_SIZE = 24;
+        const TARGET_LAPS = 2;
+
+        // Columnas del Tablero de Valor Posicional (8 columnas para cubrir desde Decenas de Millar hasta Milésimos)
+        const PLACE_COLUMNS = [
+            { id: 'DM', label: 'DM', name: 'Decena de Millar', color: 'text-purple-400', border: 'border-purple-500/40', bg: 'bg-purple-950/30' },
+            { id: 'UM', label: 'UM', name: 'Unidad de Millar', color: 'text-indigo-400', border: 'border-indigo-500/40', bg: 'bg-indigo-950/30' },
+            { id: 'C',  label: 'C',  name: 'Centenas',         color: 'text-blue-400',   border: 'border-blue-500/40',   bg: 'bg-blue-950/30' },
+            { id: 'D',  label: 'D',  name: 'Decenas',          color: 'text-cyan-400',   border: 'border-cyan-500/40',   bg: 'bg-cyan-950/30' },
+            { id: 'U',  label: 'U',  name: 'Unidades',         color: 'text-emerald-400',border: 'border-emerald-500/40',bg: 'bg-emerald-950/30' },
+            { id: 'COMMA', label: ',', name: 'Coma Decimal',   color: 'text-yellow-400', border: 'border-yellow-500/60', bg: 'bg-yellow-950/40', isComma: true },
+            { id: 'd',  label: 'd',  name: 'Décimos',          color: 'text-amber-400',  border: 'border-amber-500/40',  bg: 'bg-amber-950/30' },
+            { id: 'c',  label: 'c',  name: 'Centésimos',       color: 'text-orange-400', border: 'border-orange-500/40', bg: 'bg-orange-950/30' },
+            { id: 'm',  label: 'm',  name: 'Milésimos',        color: 'text-rose-400',   border: 'border-rose-500/40',   bg: 'bg-rose-950/30' }
+        ];
+
+        // --- BANCO DE 16 EJERCICIOS (INCLUYE LOS 6 DE LAS IMÁGENES DE REFERENCIA) ---
+        const QUESTION_BANK = [
+            // === LOS 6 PROBLEMAS DE LAS IMÁGENES DE REFERENCIA ===
+            {
+                id: 1,
+                level: 1,
+                time: 75,
+                badge: "Problema de Referencia 1 • Sustracción con Préstamo",
+                icon: "🏺",
+                q: "Una jarra vacía pesa 0,84 kg y llena con agua pesa 1,950 kg. ¿Cuánto pesa el agua?",
+                options: ["1,110 kg", "1,090 kg", "2,790 kg", "1,150 kg"],
+                ans: 0,
+                exp: "Completamos con ceros (0,840) y restamos en el tablero posicional: 1,950 - 0,840 = 1,110 kg (o 1,11 kg).",
+                boardPreset: {
+                    op: '-',
+                    operands: ["1,950", "0,840"],
+                    expectedResult: "1,110",
+                    hint: "Resta desde los milésimos (m) hacia las unidades (U). Completa con cero: 0,84 = 0,840."
+                }
+            },
+            {
+                id: 2,
+                level: 2,
+                time: 90,
+                badge: "Problema de Referencia 2 • Sustracción con Llevada",
+                icon: "🥛",
+                q: "Un recipiente de 3,5 litros de capacidad máxima contiene 1,850 litros de leche. ¿Cuánto de leche falta para que el recipiente esté lleno?",
+                options: ["1,750 litros", "1,650 litros", "2,350 litros", "1,550 litros"],
+                ans: 1,
+                exp: "Igualamos cifras decimales (3,500) y restamos con préstamo: 3,500 - 1,850 = 1,650 litros.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["3,500", "1,850"],
+                    expectedResult: "1,650",
+                    hint: "Usa la fila de Préstamo/Llevada: el 5 presta al 0 en centésimos, y el 3 presta al 4 en décimos."
+                }
+            },
+            {
+                id: 3,
+                level: 2,
+                time: 90,
+                badge: "Problema de Referencia 3 • Adición con Llevada",
+                icon: "💳",
+                q: "Mario paga por su mensualidad S/435,90, por su seguro médico S/29,90 y por el carnet de medio pasaje S/15,50. ¿Cuánto paga en total?",
+                options: ["S/ 471,30", "S/ 480,30", "S/ 481,30", "S/ 481,50"],
+                ans: 2,
+                exp: "Alineamos la coma decimal y sumamos: 435,90 + 29,90 + 15,50 = S/ 481,30.",
+                boardPreset: {
+                    op: '+',
+                    operands: ["435,90", "29,90", "15,50"],
+                    expectedResult: "481,30",
+                    hint: "Suma los décimos: 9 + 9 + 5 = 23. Escribe 3 en décimos (d) y lleva 2 a las Unidades (U)."
+                }
+            },
+            {
+                id: 4,
+                level: 2,
+                time: 90,
+                badge: "Problema de Referencia 4 • Sustracción en Millar",
+                icon: "🚗",
+                q: "Al iniciar un viaje, el cuentakilómetros de mi auto marcaba 12 864,8 km y, al llegar a mi destino, marcó 14 998,9 km. ¿Cuántos kilómetros recorrí?",
+                options: ["2 134,1 km", "2 130,1 km", "2 234,1 km", "1 134,1 km"],
+                ans: 0,
+                exp: "Restamos la lectura final menos la inicial: 14 998,9 - 12 864,8 = 2 134,1 km.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["14998,9", "12864,8"],
+                    expectedResult: "2134,1",
+                    hint: "Resta directa sin préstamo columna por columna desde los décimos hasta las decenas de millar."
+                }
+            },
+            {
+                id: 5,
+                level: 3,
+                time: 110,
+                badge: "Problema de Referencia 5 • Adición Múltiple con Llevada",
+                icon: "🛢️",
+                q: "De un depósito con agua se sacan 195,5 litros, después 148,75 litros y finalmente se sacan 94,5 litros. Al final quedan en el depósito 61,25 litros. ¿Qué cantidad de agua había en el depósito?",
+                options: ["490,00 litros", "500,00 litros", "510,25 litros", "485,50 litros"],
+                ans: 1,
+                exp: "Sumamos todo lo extraído más lo que queda: 195,50 + 148,75 + 94,50 + 61,25 = 500,00 litros.",
+                boardPreset: {
+                    op: '+',
+                    operands: ["195,50", "148,75", "94,50", "61,25"],
+                    expectedResult: "500,00",
+                    hint: "En centésimos: 5+5=10 (llevo 1). En décimos: 1+5+7+5+2=20 (llevo 2 a Unidades)."
+                }
+            },
+            {
+                id: 6,
+                level: 3,
+                time: 110,
+                badge: "Problema de Referencia 6 • Operaciones Combinadas",
+                icon: "🚴",
+                q: "Un ciclista ha recorrido 165,8 km en una etapa, 135,95 km en la segunda etapa y 182,65 km en la tercera etapa. ¿Cuántos kilómetros le quedan por recorrer si la carrera es de 1 000 km?",
+                options: ["484,40 km", "515,60 km", "525,60 km", "514,40 km"],
+                ans: 1,
+                exp: "1° Sumamos lo recorrido: 165,80 + 135,95 + 182,65 = 484,40 km. 2° Restamos: 1000,00 - 484,40 = 515,60 km.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["1000,00", "484,40"],
+                    expectedResult: "515,60",
+                    hint: "Las 3 etapas suman 484,40 km. Ahora resta en el tablero: 1000,00 - 484,40."
+                }
+            },
+
+            // === 10 EJERCICIOS ADICIONALES DE ADICIÓN Y SUSTRACCIÓN EN TABLERO POSICIONAL ===
+            {
+                id: 7,
+                level: 1,
+                time: 60,
+                badge: "Ejercicio 7 • Adición sin Llevada",
+                icon: "⚡",
+                q: "En el laboratorio de robótica, un cable mide 12,35 m y otro mide 24,42 m. ¿Cuál es la longitud total al unirlos?",
+                options: ["36,77 m", "35,77 m", "36,87 m", "37,77 m"],
+                ans: 0,
+                exp: "Alineamos las comas en el tablero posicional y sumamos sin llevada: 12,35 + 24,42 = 36,77 m.",
+                boardPreset: {
+                    op: '+',
+                    operands: ["12,35", "24,42"],
+                    expectedResult: "36,77",
+                    hint: "Suma directa columna por columna: centésimos (5+2=7), décimos (3+4=7), unidades (2+4=6), decenas (1+2=3)."
+                }
+            },
+            {
+                id: 8,
+                level: 1,
+                time: 65,
+                badge: "Ejercicio 8 • Sustracción sin Préstamo",
+                icon: "🧪",
+                q: "Un frasco químico contiene 48,95 ml de solución. Si se utilizan 15,43 ml en un experimento, ¿cuánto queda?",
+                options: ["33,42 ml", "33,52 ml", "32,52 ml", "34,52 ml"],
+                ans: 1,
+                exp: "Restamos columna por columna sin necesidad de préstamo: 48,95 - 15,43 = 33,52 ml.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["48,95", "15,43"],
+                    expectedResult: "33,52",
+                    hint: "Resta directa: en centésimos 5 - 3 = 2, en décimos 9 - 4 = 5, en unidades 8 - 5 = 3, en decenas 4 - 1 = 3."
+                }
+            },
+            {
+                id: 9,
+                level: 1,
+                time: 70,
+                badge: "Ejercicio 9 • Adición con Llevada",
+                icon: "🔋",
+                q: "Una batería solar almacena 45,68 kWh por la mañana y 37,55 kWh por la tarde. ¿Cuánta energía almacenó en total?",
+                options: ["82,23 kWh", "83,13 kWh", "83,23 kWh", "84,23 kWh"],
+                ans: 2,
+                exp: "Sumamos con llevada en centésimos, décimos y unidades: 45,68 + 37,55 = 83,23 kWh.",
+                boardPreset: {
+                    op: '+',
+                    operands: ["45,68", "37,55"],
+                    expectedResult: "83,23",
+                    hint: "En centésimos: 8 + 5 = 13 (escribe 3 y lleva 1 a los décimos). En décimos: 1 + 6 + 5 = 12 (lleva 1 a Unidades)."
+                }
+            },
+            {
+                id: 10,
+                level: 1,
+                time: 70,
+                badge: "Ejercicio 10 • Sustracción completando Ceros",
+                icon: "🏁",
+                q: "Un dron de carreras debe volar 25,4 km. Si ya avanzó 12,75 km, ¿cuántos kilómetros le faltan para llegar a la meta?",
+                options: ["12,65 km", "13,65 km", "12,75 km", "13,35 km"],
+                ans: 0,
+                exp: "Completamos con cero (25,40) y restamos con préstamo: 25,40 - 12,75 = 12,65 km.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["25,40", "12,75"],
+                    expectedResult: "12,65",
+                    hint: "El 4 en décimos presta 1 al 0 en centésimos (10 - 5 = 5). Luego el 5 en unidades presta 1 a los décimos (13 - 7 = 6)."
+                }
+            },
+            {
+                id: 11,
+                level: 2,
+                time: 80,
+                badge: "Ejercicio 11 • Adición hasta Milésimos",
+                icon: "🔬",
+                q: "En una balanza digital se colocan dos muestras de mineral: una de 4,375 kg y otra de 2,845 kg. ¿Cuál es la masa total?",
+                options: ["7,120 kg", "7,220 kg", "6,220 kg", "7,210 kg"],
+                ans: 1,
+                exp: "Sumamos desde los milésimos con llevada: 4,375 + 2,845 = 7,220 kg.",
+                boardPreset: {
+                    op: '+',
+                    operands: ["4,375", "2,845"],
+                    expectedResult: "7,220",
+                    hint: "Milésimos: 5+5=10 (lleva 1). Centésimos: 1+7+4=12 (lleva 1). Décimos: 1+3+8=12 (lleva 1 a Unidades)."
+                }
+            },
+            {
+                id: 12,
+                level: 2,
+                time: 80,
+                badge: "Ejercicio 12 • Sustracción desde Número Entero",
+                icon: "⛽",
+                q: "El tanque de un bólido tiene capacidad para 50 litros exactos. Si actualmente tiene 34,625 litros, ¿cuánto falta para llenarlo?",
+                options: ["15,475 litros", "16,375 litros", "15,375 litros", "15,385 litros"],
+                ans: 2,
+                exp: "Expresamos 50 como 50,000 y restamos con préstamos sucesivos: 50,000 - 34,625 = 15,375 litros.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["50,000", "34,625"],
+                    expectedResult: "15,375",
+                    hint: "El 5 en decenas presta en cadena: las unidades quedan en 9, décimos en 9, centésimos en 9 y milésimos en 10."
+                }
+            },
+            {
+                id: 13,
+                level: 2,
+                time: 85,
+                badge: "Ejercicio 13 • Adición de 3 Sumandos",
+                icon: "⏱️",
+                q: "Un piloto registró tres parciales: 18,45 s en el sector 1; 22,8 s en el sector 2 y 19,75 s en el sector 3. ¿Cuál fue su tiempo total?",
+                options: ["60,00 s", "61,00 s", "60,90 s", "61,10 s"],
+                ans: 1,
+                exp: "Igualamos con ceros (22,80) y sumamos: 18,45 + 22,80 + 19,75 = 61,00 segundos.",
+                boardPreset: {
+                    op: '+',
+                    operands: ["18,45", "22,80", "19,75"],
+                    expectedResult: "61,00",
+                    hint: "Centésimos: 5+0+5=10 (lleva 1). Décimos: 1+4+8+7=20 (escribe 0 y lleva 2 a las Unidades)."
+                }
+            },
+            {
+                id: 14,
+                level: 3,
+                time: 95,
+                badge: "Ejercicio 14 • Sustracción en Centenas con Préstamo",
+                icon: "🛰️",
+                q: "Un satélite se encuentra a 402,3 km de altitud y desciende 178,65 km para ajustar su órbita. ¿A qué altitud queda?",
+                options: ["223,65 km", "224,65 km", "233,65 km", "223,75 km"],
+                ans: 0,
+                exp: "Completamos con cero (402,30) y restamos: 402,30 - 178,65 = 223,65 km.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["402,30", "178,65"],
+                    expectedResult: "223,65",
+                    hint: "Completa 402,30. Recuerda gestionar los préstamos en décimos, unidades y decenas."
+                }
+            },
+            {
+                id: 15,
+                level: 3,
+                time: 100,
+                badge: "Ejercicio 15 • Adición de Grandes Cantidades",
+                icon: "🏗️",
+                q: "Un camión transporta dos contenedores: uno de 1 245,75 kg y otro de 2 864,5 kg. ¿Cuál es la carga total que lleva?",
+                options: ["4 100,25 kg", "4 110,25 kg", "4 110,75 kg", "4 010,25 kg"],
+                ans: 1,
+                exp: "Alineamos las comas (2 864,50) y sumamos: 1 245,75 + 2 864,50 = 4 110,25 kg.",
+                boardPreset: {
+                    op: '+',
+                    operands: ["1245,75", "2864,50"],
+                    expectedResult: "4110,25",
+                    hint: "Alinea cada cifra hasta las Unidades de Millar (UM) y registra las llevadas en la fila superior."
+                }
+            },
+            {
+                id: 16,
+                level: 3,
+                time: 100,
+                badge: "Ejercicio 16 • Gran Final en Milésimos",
+                icon: "🏆",
+                q: "El récord de pista era de 120,500 segundos. Si el nuevo campeón logró reducir el tiempo en 4,875 segundos, ¿cuál es el nuevo récord?",
+                options: ["115,625 s", "116,625 s", "115,725 s", "114,625 s"],
+                ans: 0,
+                exp: "Restamos en el tablero posicional hasta los milésimos: 120,500 - 4,875 = 115,625 segundos.",
+                boardPreset: {
+                    op: '-',
+                    operands: ["120,500", "4,875"],
+                    expectedResult: "115,625",
+                    hint: "El 5 en décimos presta a centésimos y milésimos (quedan 4, 9 y 10). Luego la decena presta a las unidades."
+                }
+            }
+        ];
+
+        // --- MOTOR DE SONIDO SINTETIZADO Y SECUENCIADOR MUSICAL GAMER ---
+        const SoundEngine = {
+            ctx: null,
+            isMuted: false,
+            musicEnabled: true,
+            isPlayingMusic: false,
+            musicTimer: null,
+            stepIndex: 0,
+            trackStyle: 0, // 0: Turbo Synthwave, 1: Cyber Carrera
+            intensity: 'normal', // 'normal' | 'tension' | 'victory'
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            },
+            toggleMute(mutedState) {
+                this.isMuted = mutedState;
+                if (this.isMuted) {
+                    this.stopMusic();
+                } else if (this.musicEnabled) {
+                    this.startMusic();
+                }
+            },
+            toggleMusic() {
+                this.init();
+                this.musicEnabled = !this.musicEnabled;
+                if (this.musicEnabled && !this.isMuted) {
+                    this.startMusic();
+                } else {
+                    this.stopMusic();
+                }
+                return this.musicEnabled;
+            },
+            switchTrack() {
+                this.init();
+                this.trackStyle = (this.trackStyle + 1) % 2;
+                this.stepIndex = 0;
+                this.playTone(880, 'triangle', 0.08, 0.08);
+                if (!this.isPlayingMusic && this.musicEnabled && !this.isMuted) {
+                    this.startMusic();
+                }
+                return this.trackStyle;
+            },
+            setIntensity(mode) {
+                this.intensity = mode;
+            },
+            // Percusión sintetizada (Bombo y Caja Gamer)
+            playKick(time) {
+                if (!this.ctx || this.isMuted) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(130, time);
+                osc.frequency.exponentialRampToValueAtTime(35, time + 0.11);
+                gain.gain.setValueAtTime(0.14, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(time);
+                osc.stop(time + 0.12);
+            },
+            playHiHat(time, open = false) {
+                if (!this.ctx || this.isMuted) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(open ? 1200 : 1850, time);
+                const dur = open ? 0.07 : 0.03;
+                gain.gain.setValueAtTime(0.025, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start(time);
+                osc.stop(time + dur);
+            },
+            playSynthNote(freq, type, duration, vol = 0.04, detune = 0) {
+                if (!this.ctx || this.isMuted || !freq) return;
+                const now = this.ctx.currentTime;
+                const osc = this.ctx.createOscillator();
+                const filter = this.ctx.createBiquadFilter();
+                const gain = this.ctx.createGain();
+
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, now);
+                osc.detune.setValueAtTime(detune, now);
+
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(this.intensity === 'tension' ? 2400 : 1600, now);
+
+                gain.gain.setValueAtTime(vol, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.ctx.destination);
+
+                osc.start(now);
+                osc.stop(now + duration);
+            },
+            startMusic() {
+                this.init();
+                if (this.isPlayingMusic || this.isMuted || !this.musicEnabled) return;
+                this.isPlayingMusic = true;
+
+                // Líneas de bajo y arpegios estilo Outrun / F-Zero / Mario Kart Synth
+                const bassTrack1 = [
+                    110, 110, 220, 110,  110, 110, 220, 110, // A2
+                    87.31, 87.31, 174.61, 87.31,  87.31, 87.31, 174.61, 87.31, // F2
+                    130.81, 130.81, 261.63, 130.81,  130.81, 130.81, 261.63, 130.81, // C3
+                    98.00, 98.00, 196.00, 98.00,  123.47, 123.47, 246.94, 123.47  // G2 - B2
+                ];
+                const leadTrack1 = [
+                    440, 0, 523.25, 659.25,  587.33, 523.25, 440, 392,
+                    349.23, 0, 440, 523.25,  659.25, 587.33, 523.25, 440,
+                    523.25, 0, 659.25, 783.99,  659.25, 587.33, 523.25, 659.25,
+                    587.33, 0, 493.88, 392,  493.88, 587.33, 659.25, 783.99
+                ];
+
+                const bassTrack2 = [
+                    146.83, 146.83, 293.66, 146.83, 146.83, 174.61, 196.00, 220.00, // D3
+                    116.54, 116.54, 233.08, 116.54, 116.54, 146.83, 174.61, 196.00, // Bb2
+                    130.81, 130.81, 261.63, 130.81, 130.81, 164.81, 196.00, 261.63, // C3
+                    110.00, 110.00, 220.00, 110.00, 138.59, 138.59, 277.18, 138.59  // A2 - C#3
+                ];
+                const leadTrack2 = [
+                    587.33, 698.46, 880, 698.46,  587.33, 0, 523.25, 587.33,
+                    466.16, 587.33, 698.46, 587.33,  466.16, 0, 523.25, 587.33,
+                    523.25, 659.25, 783.99, 659.25,  523.25, 0, 659.25, 783.99,
+                    880.00, 0, 783.99, 698.46,  659.25, 698.46, 783.99, 880.00
+                ];
+
+                const stepTimeMs = 135; // ~111 BPM (semicorcheas)
+
+                this.musicTimer = setInterval(() => {
+                    if (this.isMuted || !this.musicEnabled || !this.ctx) return;
+                    if (this.ctx.state === 'suspended') return;
+
+                    const now = this.ctx.currentTime;
+                    const s = this.stepIndex % 32;
+
+                    const bassArr = this.trackStyle === 0 ? bassTrack1 : bassTrack2;
+                    const leadArr = this.trackStyle === 0 ? leadTrack1 : leadTrack2;
+
+                    // Multiplicador si está en modo pregunta de últimos segundos
+                    const pitchMult = this.intensity === 'tension' ? 1.05946 : 1; // Sube 1 semitono en tensión
+
+                    // 1. Bajo Synthwave pulsante constante
+                    const bassFreq = bassArr[s] * pitchMult;
+                    if (bassFreq) {
+                        this.playSynthNote(bassFreq, 'sawtooth', 0.11, 0.045);
+                    }
+
+                    // 2. Melodía Arpegiada Gamer
+                    const leadFreq = leadArr[s] * pitchMult;
+                    if (leadFreq) {
+                        this.playSynthNote(leadFreq, 'square', 0.12, 0.028, 6);
+                        this.playSynthNote(leadFreq * 0.5, 'triangle', 0.12, 0.02, -6);
+                    }
+
+                    // 3. Batería Electrónica 4x4
+                    if (s % 4 === 0) {
+                        this.playKick(now);
+                    }
+                    if (s % 2 === 1) {
+                        this.playHiHat(now, s % 4 === 3);
+                    }
+
+                    this.stepIndex++;
+                }, stepTimeMs);
+            },
+            stopMusic() {
+                this.isPlayingMusic = false;
+                if (this.musicTimer) {
+                    clearInterval(this.musicTimer);
+                    this.musicTimer = null;
+                }
+            },
+            playTone(freq, type, duration, vol = 0.1) {
+                if (!this.ctx || this.isMuted) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + duration);
+            },
+            roll() { this.playTone(420, 'square', 0.08, 0.06); setTimeout(() => this.playTone(640, 'square', 0.08, 0.06), 90); },
+            move() { this.playTone(750, 'sine', 0.05, 0.04); },
+            type() { this.playTone(950, 'triangle', 0.04, 0.035); },
+            correct() { this.playTone(587.33, 'sine', 0.1, 0.12); setTimeout(() => this.playTone(880, 'triangle', 0.2, 0.12), 100); setTimeout(() => this.playTone(1174.66, 'sine', 0.4, 0.14), 200); },
+            wrong() { this.playTone(300, 'sawtooth', 0.35, 0.11); setTimeout(() => this.playTone(190, 'sawtooth', 0.4, 0.11), 150); },
+            special() { this.playTone(980, 'square', 0.1, 0.09); setTimeout(() => this.playTone(1480, 'square', 0.22, 0.09), 100); }
+        };
+
+        // --- ICONOS SVG ---
+        const CheckIcon = ({className="w-8 h-8"}) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"></polyline></svg>;
+        const XIcon = ({className="w-8 h-8"}) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>;
+        const ClockIcon = ({className="w-6 h-6"}) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
+        const TrophyIcon = ({className="w-20 h-20 text-yellow-400"}) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}><path d="M8 21h8m-4-4v4m0-4V3m-9 4h18M5 11h14m-1-4a3 3 0 013 3 3 3 0 01-3 3M6 7a3 3 0 00-3 3 3 3 0 003 3"></path></svg>;
+        const PlayIcon = ({className="w-8 h-8"}) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
+        const SpeakerIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>;
+        const SpeakerXIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>;
+        const MusicIcon = ({className="w-5 h-5"}) => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>;
+        const GridIcon = () => <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg>;
+
+        // --- BOTÓN ESTILIZADO ---
+        const Button = ({ onClick, children, variant = 'primary', className = '', disabled = false }) => {
+            const base = "relative px-5 py-3 font-black rounded-2xl shadow-[0_6px_0_0_rgba(0,0,0,0.6)] active:shadow-[0_0px_0_0_rgba(0,0,0,0.6)] active:translate-y-1.5 transition-all duration-150 flex items-center justify-center overflow-hidden uppercase tracking-wider cursor-pointer select-none";
+            const variants = {
+                primary: `bg-gradient-to-b from-cyan-400 to-cyan-600 text-black border-b-4 border-cyan-800 hover:brightness-110`,
+                secondary: `bg-gradient-to-b from-slate-600 to-slate-800 text-white border-b-4 border-slate-950 hover:brightness-110`,
+                accent: `bg-gradient-to-b from-pink-500 to-pink-700 text-white border-b-4 border-pink-950 hover:brightness-110`,
+                success: `bg-gradient-to-b from-green-400 to-green-600 text-black border-b-4 border-green-800 hover:brightness-110`,
+                danger: `bg-gradient-to-b from-red-500 to-red-700 text-white border-b-4 border-red-900 hover:brightness-110`,
+                warning: `bg-gradient-to-b from-amber-400 to-amber-600 text-black border-b-4 border-amber-800 hover:brightness-110`
+            };
+
+            return (
+                <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${disabled ? 'opacity-50 cursor-not-allowed transform-none' : ''} ${className}`}>
+                    <span className="relative z-10 flex items-center gap-2">{children}</span>
+                    <div className="absolute inset-0 bg-white opacity-0 hover:opacity-20 transition-opacity"></div>
+                </button>
+            );
+        };
+
+        // --- FONDO DINÁMICO SYNTHWAVE ---
+        const DynamicBackground = () => (
+            <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 bg-[#090914]">
+                <div className="absolute top-[8%] left-1/2 -translate-x-1/2 w-[750px] h-[750px] rounded-full bg-gradient-to-b from-pink-600 via-purple-700 to-transparent opacity-20 blur-[110px] pointer-events-none"></div>
+                
+                <div className="absolute bottom-[-20%] left-[-50%] w-[200%] h-[120%] opacity-35 animate-grid-flow" style={{
+                    backgroundImage: `linear-gradient(${COLORS.primary}80 2px, transparent 2px), linear-gradient(90deg, ${COLORS.primary}80 2px, transparent 2px)`,
+                    backgroundSize: '100px 100px',
+                    transform: 'perspective(1000px) rotateX(70deg)',
+                    boxShadow: `inset 0 100px 100px ${COLORS.bgBase}`
+                }}></div>
+
+                {Array.from({length: 30}).map((_, i) => (
+                    <div key={i} className="absolute bg-cyan-300 rounded-full opacity-0 animate-speed-line"
+                        style={{
+                            width: Math.random() * 2 + 1 + 'px',
+                            height: Math.random() * 18 + 6 + 'px',
+                            left: Math.random() * 100 + '%',
+                            top: '-10%',
+                            animationDelay: `${Math.random() * 5}s`,
+                            animationDuration: `${Math.random() * 2 + 1.2}s`
+                        }}
+                    />
+                ))}
+            </div>
+        );
+
+        // --- UTILIDAD PARA PARSEAR UN DECIMAL A COLUMNAS DEL TABLERO ---
+        const numberStringToColumns = (numStr) => {
+            const clean = (numStr || '').replace('.', ',').trim();
+            const [intPart = '', decPart = ''] = clean.split(',');
+            const intCols = ['DM', 'UM', 'C', 'D', 'U'];
+            const decCols = ['d', 'c', 'm'];
+
+            const map = { DM: '', UM: '', C: '', D: '', U: '', COMMA: ',', d: '', c: '', m: '' };
+
+            // Mapear parte entera de derecha a izquierda
+            const intChars = intPart.split('');
+            for (let i = 0; i < intChars.length; i++) {
+                const digit = intChars[intChars.length - 1 - i];
+                const colIdx = intCols.length - 1 - i;
+                if (colIdx >= 0) map[intCols[colIdx]] = digit;
+            }
+
+            // Mapear parte decimal de izquierda a derecha
+            const decChars = decPart.split('');
+            for (let i = 0; i < decChars.length; i++) {
+                if (i < decCols.length) map[decCols[i]] = decChars[i];
+            }
+
+            return map;
+        };
+
+        // --- COMPONENTE: TABLERO DE VALOR POSICIONAL INTERACTIVO (CON LLEVADA / PRÉSTAMO) ---
+        const PlaceValueBoard = ({ preset, onVerifiedMatch }) => {
+            const [hasCarry, setHasCarry] = useState(true);
+            const [carries, setCarries] = useState({ DM: '', UM: '', C: '', D: '', U: '', d: '', c: '', m: '' });
+            const [rows, setRows] = useState([]);
+            const [resultRow, setResultRow] = useState({ DM: '', UM: '', C: '', D: '', U: '', COMMA: ',', d: '', c: '', m: '' });
+            const [boardStatus, setBoardStatus] = useState(null); // 'correct' | 'error' | null
+
+            // Cargar los datos del ejercicio actual en el tablero
+            useEffect(() => {
+                if (!preset) return;
+                const mappedRows = preset.operands.map(opStr => numberStringToColumns(opStr));
+                setRows(mappedRows);
+                setCarries({ DM: '', UM: '', C: '', D: '', U: '', d: '', c: '', m: '' });
+                setResultRow({ DM: '', UM: '', C: '', D: '', U: '', COMMA: ',', d: '', c: '', m: '' });
+                setBoardStatus(null);
+            }, [preset]);
+
+            const handleCarryChange = (colId, val) => {
+                SoundEngine.type();
+                setCarries(prev => ({ ...prev, [colId]: val.slice(-2) }));
+            };
+
+            const handleOperandCellChange = (rowIdx, colId, val) => {
+                SoundEngine.type();
+                const digit = val.replace(/[^0-9]/g, '').slice(-1);
+                setRows(prev => prev.map((r, i) => i === rowIdx ? { ...r, [colId]: digit } : r));
+            };
+
+            const handleResultChange = (colId, val) => {
+                SoundEngine.type();
+                const digit = val.replace(/[^0-9]/g, '').slice(-1);
+                setResultRow(prev => {
+                    const updated = { ...prev, [colId]: digit };
+                    setBoardStatus(null);
+                    return updated;
+                });
+            };
+
+            // Autocompletar ceros en decimales vacíos para igualar longitudes
+            const fillDecimalZeros = () => {
+                SoundEngine.special();
+                const decCols = ['d', 'c', 'm'];
+                // Determinar hasta qué columna decimal se usa en los operandos
+                let maxDecIdx = -1;
+                rows.forEach(r => {
+                    decCols.forEach((c, idx) => {
+                        if (r[c] !== '') maxDecIdx = Math.max(maxDecIdx, idx);
+                    });
+                });
+                if (maxDecIdx === -1) return;
+
+                setRows(prev => prev.map(r => {
+                    const copy = { ...r };
+                    for (let i = 0; i <= maxDecIdx; i++) {
+                        const col = decCols[i];
+                        if (copy[col] === '') copy[col] = '0';
+                    }
+                    return copy;
+                }));
+            };
+
+            // Verificar si el resultado escrito en el tablero posicional es correcto
+            const checkBoardResult = () => {
+                if (!preset?.expectedResult) return;
+                const expectedMap = numberStringToColumns(preset.expectedResult);
+                const valueCols = ['DM', 'UM', 'C', 'D', 'U', 'd', 'c', 'm'];
+                
+                let isMatch = true;
+                for (const col of valueCols) {
+                    const expVal = expectedMap[col] || '';
+                    const usrVal = resultRow[col] || '';
+                    // Permitir que un 0 final en milésimos sea opcional o exacto
+                    if (expVal !== usrVal) {
+                        if (!(col === 'm' && expVal === '0' && usrVal === '')) {
+                            isMatch = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (isMatch) {
+                    SoundEngine.correct();
+                    setBoardStatus('correct');
+                    if (onVerifiedMatch) onVerifiedMatch();
+                } else {
+                    SoundEngine.wrong();
+                    setBoardStatus('error');
+                }
+            };
+
+            // Resolver automáticamente paso a paso en el tablero (Ayuda visual)
+            const autoSolveBoard = () => {
+                if (!preset?.expectedResult) return;
+                SoundEngine.special();
+                const expectedMap = numberStringToColumns(preset.expectedResult);
+                setResultRow(expectedMap);
+                setBoardStatus('correct');
+            };
+
+            return (
+                <div className="bg-slate-950/90 border-2 border-cyan-500/40 rounded-3xl p-3 sm:p-5 shadow-[0_0_40px_rgba(0,242,254,0.15)] flex flex-col w-full">
+                    {/* Cabecera del Tablero Posicional */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2 border-b border-white/10">
+                        <div className="flex items-center gap-2">
+                            <span className="bg-cyan-500/20 text-cyan-300 p-1.5 rounded-lg border border-cyan-400/40">
+                                <GridIcon />
+                            </span>
+                            <div>
+                                <h3 className="font-orbitron font-black text-xs sm:text-sm text-cyan-300 uppercase tracking-wider">
+                                    Tablero de Valor Posicional
+                                </h3>
+                                <p className="text-[11px] text-slate-400">
+                                    Alinea la coma decimal y usa las casillas superiores para la llevada o préstamo
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setHasCarry(!hasCarry)}
+                                className={`px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wider border transition-all ${
+                                    hasCarry 
+                                    ? 'bg-pink-600/30 border-pink-400 text-pink-200 shadow-[0_0_12px_rgba(254,9,121,0.4)]' 
+                                    : 'bg-slate-800 border-slate-600 text-slate-400'
+                                }`}
+                            >
+                                {hasCarry ? '✓ Con Llevada / Préstamo' : 'Sin Llevada'}
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={fillDecimalZeros}
+                                className="px-3 py-1 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-400/40 transition-all"
+                                title="Completar espacios decimales vacíos con ceros"
+                            >
+                                + Completar 0s
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Grilla del Tablero Posicional */}
+                    <div className="overflow-x-auto pb-1">
+                        <div className="min-w-[460px]">
+                            {/* Encabezados de Valor Posicional */}
+                            <div className="grid grid-cols-10 gap-1 mb-1.5 text-center items-center">
+                                <div className="text-[10px] font-bold text-slate-500 uppercase">OP.</div>
+                                {PLACE_COLUMNS.map(col => (
+                                    <div 
+                                        key={col.id} 
+                                        title={col.name}
+                                        className={`py-1 rounded-lg font-orbitron font-black text-xs sm:text-sm border ${col.border} ${col.bg} ${col.color}`}
+                                    >
+                                        {col.label}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Fila de LLEVADA / PRÉSTAMO (Activable) */}
+                            {hasCarry && (
+                                <div className="grid grid-cols-10 gap-1 mb-2 items-center">
+                                    <div className="text-[10px] font-black text-pink-400 uppercase text-center leading-tight">
+                                        {preset?.op === '-' ? 'Presta' : 'Lleva'}
+                                    </div>
+                                    {PLACE_COLUMNS.map(col => (
+                                        col.isComma ? (
+                                            <div key={col.id} className="flex items-center justify-center text-yellow-500/40 font-black text-xs">
+                                                •
+                                            </div>
+                                        ) : (
+                                            <input
+                                                key={col.id}
+                                                type="text"
+                                                value={carries[col.id] || ''}
+                                                onChange={(e) => handleCarryChange(col.id, e.target.value)}
+                                                placeholder="+"
+                                                className="w-full h-7 sm:h-8 bg-pink-950/40 border border-dashed border-pink-500/60 focus:border-pink-400 rounded-lg text-center font-black text-xs sm:text-sm text-pink-300 placeholder-pink-500/30 outline-none transition-all focus:scale-105"
+                                            />
+                                        )
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Filas de Operandos (Sumandos / Minuendo y Sustraendo) */}
+                            <div className="space-y-1.5">
+                                {rows.map((rowObj, rIdx) => (
+                                    <div key={rIdx} className="grid grid-cols-10 gap-1 items-center">
+                                        <div className="flex items-center justify-center font-black text-lg sm:text-xl text-cyan-400">
+                                            {rIdx === rows.length - 1 ? preset?.op : ''}
+                                        </div>
+                                        {PLACE_COLUMNS.map(col => (
+                                            col.isComma ? (
+                                                <div key={col.id} className="h-9 sm:h-10 flex items-center justify-center bg-yellow-500/10 border border-yellow-500/40 rounded-lg font-black text-xl text-yellow-400">
+                                                    ,
+                                                </div>
+                                            ) : (
+                                                <input
+                                                    key={col.id}
+                                                    type="text"
+                                                    value={rowObj[col.id] || ''}
+                                                    onChange={(e) => handleOperandCellChange(rIdx, col.id, e.target.value)}
+                                                    className={`w-full h-9 sm:h-10 bg-slate-900/90 border ${
+                                                        rowObj[col.id] !== '' ? 'border-slate-600 text-white' : 'border-slate-800 text-slate-500'
+                                                    } focus:border-cyan-400 rounded-lg text-center font-mono font-black text-base sm:text-lg outline-none`}
+                                                />
+                                            )
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Línea divisoria de total */}
+                            <div className="my-2 h-1 w-full bg-gradient-to-r from-transparent via-cyan-400 to-transparent rounded-full shadow-[0_0_10px_#00f2fe]"></div>
+
+                            {/* Fila de RESULTADO INTERACTIVO */}
+                            <div className="grid grid-cols-10 gap-1 items-center">
+                                <div className="flex items-center justify-center font-black text-lg sm:text-xl text-emerald-400">
+                                    =
+                                </div>
+                                {PLACE_COLUMNS.map(col => (
+                                    col.isComma ? (
+                                        <div key={col.id} className="h-10 sm:h-12 flex items-center justify-center bg-yellow-500/20 border-2 border-yellow-400 rounded-xl font-black text-2xl text-yellow-300 shadow-[0_0_10px_rgba(250,204,21,0.4)]">
+                                            ,
+                                        </div>
+                                    ) : (
+                                        <input
+                                            key={col.id}
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={resultRow[col.id] || ''}
+                                            onChange={(e) => handleResultChange(col.id, e.target.value)}
+                                            placeholder="?"
+                                            className={`w-full h-10 sm:h-12 rounded-xl text-center font-mono font-black text-lg sm:text-2xl outline-none transition-all border-2 ${
+                                                boardStatus === 'correct'
+                                                    ? 'bg-emerald-950/80 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(57,255,20,0.4)]'
+                                                    : boardStatus === 'error'
+                                                    ? 'bg-rose-950/80 border-rose-500 text-rose-300'
+                                                    : 'bg-slate-900 border-cyan-500/60 focus:border-cyan-300 text-cyan-200 placeholder-slate-700 focus:bg-slate-800'
+                                            }`}
+                                        />
+                                    )
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Pie del Tablero Posicional: Pista + Botones de Comprobación */}
+                    <div className="mt-3 pt-2 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-2">
+                        <div className="text-xs text-slate-300 flex items-center gap-1.5">
+                            <span className="text-yellow-400 font-bold">💡 Pista Posicional:</span>
+                            <span>{preset?.hint}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                            <button
+                                type="button"
+                                onClick={autoSolveBoard}
+                                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600 transition-all"
+                            >
+                                Ver en Tablero
+                            </button>
+                            <button
+                                type="button"
+                                onClick={checkBoardResult}
+                                className="px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider bg-gradient-to-r from-cyan-400 to-emerald-400 text-black shadow-[0_0_15px_rgba(0,242,254,0.4)] hover:brightness-110 transition-all"
+                            >
+                                Comprobar Tablero
+                            </button>
+                        </div>
+                    </div>
+
+                    {boardStatus === 'correct' && (
+                        <div className="mt-2 bg-emerald-500/20 border border-emerald-400 text-emerald-300 text-xs font-bold px-3 py-1.5 rounded-xl text-center animate-fade-in">
+                            ¡Excelente! Tu cálculo en el Tablero de Valor Posicional es exacto ({preset.expectedResult}). ¡Ahora selecciona la alternativa correcta!
+                        </div>
+                    )}
+                    {boardStatus === 'error' && (
+                        <div className="mt-2 bg-rose-500/20 border border-rose-400 text-rose-300 text-xs font-bold px-3 py-1.5 rounded-xl text-center animate-fade-in">
+                            Revisa las columnas o la llevada/préstamo. Asegúrate de alinear cada cifra según su valor posicional.
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- APLICACIÓN PRINCIPAL ---
+        function App() {
+            const [gameState, setGameState] = useState('START'); // 'START' | 'PLAY' | 'PRACTICE' | 'END'
+            const [players, setPlayers] = useState([
+                { id: 0, name: 'Piloto 1', color: COLORS.primary, avatar: '🏎️', pos: 0, laps: 0, missNextTurn: false, totalCorrect: 0 },
+                { id: 1, name: 'Piloto 2', color: COLORS.neonOrange, avatar: '🚘', pos: 0, laps: 0, missNextTurn: false, totalCorrect: 0 }
+            ]);
+            const [activePlayer, setActivePlayer] = useState(0);
+            
+            const [turnPhase, setTurnPhase] = useState('WAITING'); 
+            const [currentDice, setCurrentDice] = useState(1);
+            const [currentQuestion, setCurrentQuestion] = useState(null);
+            const [timeLeft, setTimeLeft] = useState(0);
+            const [feedback, setFeedback] = useState(null);
+            
+            const [specialMsg, setSpecialMsg] = useState(null);
+            const [teacherMode, setTeacherMode] = useState(false); 
+            const [isMuted, setIsMuted] = useState(false);
+            const [musicOn, setMusicOn] = useState(true);
+            const [trackStyle, setTrackStyle] = useState(0);
+            const [solvedIds, setSolvedIds] = useState([]);
+            const [practiceIndex, setPracticeIndex] = useState(0);
+
+            const timerRef = useRef(null);
+            const availableQuestionsRef = useRef([...QUESTION_BANK]);
+
+            const handleToggleAudio = () => {
+                const newMuteState = !isMuted;
+                setIsMuted(newMuteState);
+                SoundEngine.toggleMute(newMuteState);
+            };
+
+            const handleToggleMusic = () => {
+                const enabled = SoundEngine.toggleMusic();
+                setMusicOn(enabled);
+            };
+
+            const handleSwitchTrack = () => {
+                const nextTrack = SoundEngine.switchTrack();
+                setTrackStyle(nextTrack);
+                setMusicOn(true);
+            };
+
+            // Ajustar intensidad de la música según el reloj de competencia
+            useEffect(() => {
+                if (turnPhase === 'QUESTION' && timeLeft > 0 && timeLeft <= 12 && !teacherMode) {
+                    SoundEngine.setIntensity('tension');
+                } else {
+                    SoundEngine.setIntensity('normal');
+                }
+            }, [turnPhase, timeLeft, teacherMode]);
+
+            const startGame = () => {
+                SoundEngine.init();
+                SoundEngine.startMusic();
+                setGameState('PLAY');
+                setTurnPhase('WAITING');
+                setActivePlayer(Math.random() > 0.5 ? 0 : 1);
+                setPlayers(players.map(p => ({ ...p, pos: 0, laps: 0, missNextTurn: false, totalCorrect: 0 })));
+                availableQuestionsRef.current = [...QUESTION_BANK];
+                setSolvedIds([]);
+            };
+
+            const openPracticeCatalog = (idx = 0) => {
+                SoundEngine.init();
+                SoundEngine.startMusic();
+                setPracticeIndex(idx);
+                setCurrentQuestion(QUESTION_BANK[idx]);
+                setFeedback(null);
+                setGameState('PRACTICE');
+            };
+
+            const rollDice = () => {
+                SoundEngine.init();
+                setTurnPhase('ROLLING');
+                SoundEngine.roll();
+                
+                let rolls = 0;
+                const interval = setInterval(() => {
+                    setCurrentDice(Math.floor(Math.random() * 6) + 1);
+                    rolls++;
+                    if (rolls > 12) {
+                        clearInterval(interval);
+                        const finalDice = Math.floor(Math.random() * 6) + 1;
+                        setCurrentDice(finalDice);
+                        setTimeout(() => movePlayer(finalDice), 750);
+                    }
+                }, 80);
+            };
+
+            const movePlayer = useCallback((steps, isSpecialMove = false) => {
+                setTurnPhase('MOVING');
+                let currentStep = 0;
+                
+                const interval = setInterval(() => {
+                    currentStep++;
+                    SoundEngine.move();
+                    
+                    setPlayers(prev => prev.map((p, idx) => {
+                        if (idx === activePlayer) {
+                            let newPos = p.pos + (steps > 0 ? 1 : -1);
+                            let newLaps = p.laps;
+                            
+                            if (newPos >= BOARD_SIZE) {
+                                newPos = newPos - BOARD_SIZE;
+                                newLaps += 1;
+                            } else if (newPos < 0) {
+                                newPos = BOARD_SIZE + newPos; 
+                            }
+                            return { ...p, pos: newPos, laps: newLaps };
+                        }
+                        return p;
+                    }));
+
+                    if (currentStep >= Math.abs(steps)) {
+                        clearInterval(interval);
+                        setTimeout(() => evaluateTile(isSpecialMove), 450);
+                    }
+                }, 280);
+            }, [activePlayer]);
+
+            const evaluateTile = useCallback((wasSpecialMove) => {
+                setPlayers(currentPlayers => {
+                    const p = currentPlayers[activePlayer];
+                    const tile = BOARD_SPACES[p.pos];
+
+                    if (p.laps >= TARGET_LAPS) {
+                        endGame(currentPlayers);
+                        return currentPlayers;
+                    }
+
+                    if (tile.type === TILE_TYPES.START) {
+                        setSpecialMsg({ title: 'SALIDA / META', desc: '¡Zona de recarga! Termina tu turno.' });
+                        setTurnPhase('SPECIAL_MSG');
+                        setTimeout(() => handleTurnEnd(false), 1800);
+                        return currentPlayers;
+                    }
+
+                    if (!wasSpecialMove) {
+                        if (tile.type === TILE_TYPES.IMPULSO) {
+                            SoundEngine.special();
+                            setSpecialMsg({ title: '¡IMPULSO DECIMAL!', desc: 'Alineaste bien la coma: avanzas 2 espacios extra.' });
+                            setTurnPhase('SPECIAL_MSG');
+                            setTimeout(() => {
+                                setSpecialMsg(null);
+                                movePlayer(2, true);
+                            }, 1800);
+                            return currentPlayers;
+                        }
+                        if (tile.type === TILE_TYPES.CAIDA) {
+                            SoundEngine.wrong();
+                            setSpecialMsg({ title: '¡DESALINEACIÓN!', desc: 'Retrocedes 3 espacios para revisar tus décimos.' });
+                            setTurnPhase('SPECIAL_MSG');
+                            setTimeout(() => {
+                                setSpecialMsg(null);
+                                movePlayer(-3, true);
+                            }, 1800);
+                            return currentPlayers;
+                        }
+                        if (tile.type === TILE_TYPES.FRICCION) {
+                            SoundEngine.wrong();
+                            setSpecialMsg({ title: '¡BOXES DE REVISIÓN!', desc: 'Pierdes tu turno actual y el próximo.' });
+                            setTurnPhase('SPECIAL_MSG');
+                            setTimeout(() => handleTurnEnd(false, true), 2600);
+                            return currentPlayers;
+                        }
+                        if (tile.type === TILE_TYPES.RESORTE) {
+                            SoundEngine.special();
+                            setSpecialMsg({ title: '¡SALTO TURBO POSICIONAL!', desc: 'Resuelve este reto Nivel 3 para saltar directo a la Meta.' });
+                            setTurnPhase('SPECIAL_MSG');
+                            setTimeout(() => {
+                                setSpecialMsg(null);
+                                openQuestion(3, true); 
+                            }, 2600);
+                            return currentPlayers;
+                        }
+                    }
+
+                    openQuestion(tile.level, false);
+                    return currentPlayers;
+                });
+            }, [activePlayer, movePlayer]);
+
+            const openQuestion = (level, isResorteJump) => {
+                let pool = availableQuestionsRef.current.filter(q => q.level === level);
+                if (pool.length === 0) {
+                    pool = availableQuestionsRef.current;
+                }
+                if (pool.length === 0) {
+                    availableQuestionsRef.current = [...QUESTION_BANK];
+                    pool = availableQuestionsRef.current;
+                }
+                
+                const q = { ...pool[Math.floor(Math.random() * pool.length)] };
+                availableQuestionsRef.current = availableQuestionsRef.current.filter(x => x.id !== q.id);
+                
+                if (isResorteJump) q.isResorteJump = true;
+
+                setCurrentQuestion(q);
+                setTimeLeft(teacherMode ? 999 : q.time);
+                setTurnPhase('QUESTION');
+            };
+
+            useEffect(() => {
+                if (gameState === 'PLAY' && turnPhase === 'QUESTION' && timeLeft > 0 && !teacherMode) {
+                    timerRef.current = setTimeout(() => setTimeLeft(prev => prev - 1), 1000);
+                } else if (gameState === 'PLAY' && turnPhase === 'QUESTION' && timeLeft === 0 && !teacherMode) {
+                    handleTimeOut();
+                }
+                return () => clearTimeout(timerRef.current);
+            }, [timeLeft, turnPhase, teacherMode, gameState]);
+
+            const handleTimeOut = useCallback(() => {
+                processAnswer(false, '¡Tiempo agotado!');
+            }, [currentQuestion]);
+
+            const handleAnswerClick = (index) => {
+                clearTimeout(timerRef.current);
+                const isCorrect = index === currentQuestion.ans;
+                if (isCorrect && !solvedIds.includes(currentQuestion.id)) {
+                    setSolvedIds(prev => [...prev, currentQuestion.id]);
+                }
+
+                if (gameState === 'PRACTICE') {
+                    if (isCorrect) SoundEngine.correct(); else SoundEngine.wrong();
+                    setFeedback({
+                        correct: isCorrect,
+                        msg: isCorrect ? '¡Ejercicio Superado!' : 'Respuesta Incorrecta',
+                        exp: currentQuestion.exp
+                    });
+                    return;
+                }
+
+                if (turnPhase !== 'QUESTION') return;
+                processAnswer(isCorrect, isCorrect ? '¡Respuesta Correcta!' : 'Respuesta Incorrecta');
+            };
+
+            const processAnswer = useCallback((isCorrect, msg) => {
+                setTurnPhase('FEEDBACK');
+                if (isCorrect) SoundEngine.correct(); else SoundEngine.wrong();
+                
+                setFeedback({
+                    correct: isCorrect,
+                    msg,
+                    exp: currentQuestion?.exp || ''
+                });
+
+                setPlayers(prev => {
+                    const newPlayers = prev.map(p => ({...p}));
+                    if (isCorrect) {
+                        newPlayers[activePlayer].totalCorrect += 1;
+                        if (currentQuestion?.isResorteJump) {
+                            newPlayers[activePlayer].pos = 0;
+                            newPlayers[activePlayer].laps += 1;
+                            SoundEngine.special();
+                        }
+                    }
+                    return newPlayers;
+                });
+
+            }, [activePlayer, currentQuestion]);
+
+            const closeFeedbackAndEndTurn = () => {
+                const isCorrect = feedback.correct;
+                setFeedback(null);
+                setCurrentQuestion(null);
+                handleTurnEnd(isCorrect, false);
+            };
+
+            const handleTurnEnd = (wasCorrect, forceSkipNext = false) => {
+                setPlayers(currentPlayers => {
+                    let nextStatePlayers = [...currentPlayers];
+                    
+                    if (nextStatePlayers[activePlayer].laps >= TARGET_LAPS) {
+                        endGame(nextStatePlayers);
+                        return nextStatePlayers;
+                    }
+
+                    if (forceSkipNext) {
+                        nextStatePlayers[activePlayer].missNextTurn = true;
+                    }
+
+                    // Racha: Si acierta mantiene su turno
+                    if (wasCorrect && !forceSkipNext) {
+                        setTurnPhase('WAITING');
+                        return nextStatePlayers; 
+                    }
+
+                    let nextPlayer = activePlayer === 0 ? 1 : 0;
+
+                    if (nextStatePlayers[nextPlayer].missNextTurn) {
+                        nextStatePlayers[nextPlayer].missNextTurn = false; 
+                        nextPlayer = activePlayer;
+                        setSpecialMsg({ title: '¡Boxes!', desc: `${nextStatePlayers[nextPlayer===0?1:0].name} pierde su turno.` });
+                        setTurnPhase('SPECIAL_MSG');
+                        setTimeout(() => {
+                            setSpecialMsg(null);
+                            setTurnPhase('WAITING');
+                        }, 2500);
+                    } else {
+                        setTurnPhase('WAITING');
+                    }
+
+                    setActivePlayer(nextPlayer);
+                    return nextStatePlayers;
+                });
+            };
+
+            const endGame = (finalPlayers) => {
+                setGameState('END');
+                setPlayers(finalPlayers); 
+                SoundEngine.correct();
+            };
+
+            const renderTileContent = (tile, idx) => {
+                const playersHere = players.filter(p => p.pos === idx);
+                const isCorner = tile.type === TILE_TYPES.START;
+                
+                let bgStyle = 'bg-slate-900/85';
+                let borderStyle = `border-[${tile.color}]`;
+                let shadowStyle = '';
+
+                if (tile.type === TILE_TYPES.START) {
+                    bgStyle = 'bg-white/15';
+                    shadowStyle = `shadow-[0_0_20px_${COLORS.text}60]`;
+                } else if (tile.type === TILE_TYPES.NORMAL) {
+                    borderStyle = `border-[${tile.color}] border-[3px]`;
+                    shadowStyle = `shadow-[inset_0_0_15px_${tile.color}40]`;
+                } else {
+                    bgStyle = 'bg-slate-950';
+                    borderStyle = `border-[${tile.color}] border-[4px]`;
+                    shadowStyle = `shadow-[0_0_20px_${tile.color}]`;
+                }
+
+                return (
+                    <div 
+                        key={idx} 
+                        className={`relative flex flex-col items-center justify-center backdrop-blur-md transition-all duration-300 group z-10 mx-auto
+                            w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 lg:w-22 lg:h-22
+                            ${isCorner ? 'rounded-[1.5rem] hover:scale-105' : 'rounded-full hover:scale-110'} 
+                            ${borderStyle} ${bgStyle} ${shadowStyle}
+                        `}
+                        style={{ 
+                            gridColumn: tile.col + 1, 
+                            gridRow: tile.row + 1,
+                            borderColor: tile.color
+                        }}
+                    >
+                        <span className={`font-orbitron font-black text-center z-10 leading-none drop-shadow-[0_2px_2px_rgba(0,0,0,1)] ${isCorner?'text-xs sm:text-sm':'text-xs sm:text-base md:text-lg'}`} style={{ color: tile.color }}>
+                            {tile.label}
+                        </span>
+                        {tile.level && (
+                            <span className="text-[8px] sm:text-[10px] text-white/60 absolute bottom-1 font-bold">N{tile.level}</span>
+                        )}
+
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                            {playersHere.map((p, i) => (
+                                <div 
+                                    key={p.id} 
+                                    className="w-6 h-6 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-full border-2 border-white shadow-[0_5px_10px_rgba(0,0,0,0.9)] flex items-center justify-center text-xs sm:text-base font-black text-white transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] absolute"
+                                    style={{ 
+                                        backgroundColor: p.color, 
+                                        transform: turnPhase === 'MOVING' ? 'translateY(-16px) scale(1.25)' : `translate(${playersHere.length > 1 ? (i===0?'-6px, -6px':'6px, 6px') : '0px, 0px'})`,
+                                        boxShadow: `0 0 12px ${p.color}`
+                                    }}
+                                >
+                                    {p.avatar}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- PANTALLA INICIO ---
+            if (gameState === 'START') {
+                return (
+                    <div className="w-full h-screen bg-[#090914] text-white flex flex-col items-center justify-center overflow-hidden relative select-none p-4">
+                        <DynamicBackground />
+                        <div className="z-10 bg-black/70 p-6 sm:p-12 rounded-[3rem] backdrop-blur-2xl border border-white/15 shadow-[0_0_120px_rgba(0,242,254,0.3)] flex flex-col items-center text-center max-w-5xl w-full animate-fade-in relative">
+                            <div className="inline-flex items-center gap-2 bg-cyan-500/10 border border-cyan-400/30 px-4 py-1.5 rounded-full text-cyan-300 font-bold tracking-[0.25em] uppercase mb-3 text-xs">
+                                <span>Simulación Interactiva • 16 Ejercicios con Tablero Posicional</span>
+                            </div>
+                            <h1 className="font-orbitron text-3xl sm:text-5xl md:text-6xl font-black mb-1 tracking-tight uppercase" style={{ textShadow: `0 0 35px ${COLORS.primary}` }}>
+                                GRAN PREMIO DE LOS
+                            </h1>
+                            <h2 className="font-orbitron text-4xl sm:text-7xl font-black leading-none mb-4 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-pink-500 to-yellow-400 drop-shadow-[0_10px_20px_rgba(0,0,0,0.8)]">
+                                NÚMEROS DECIMALES
+                            </h2>
+                            <p className="text-slate-300 text-xs sm:text-base max-w-2xl mb-6">
+                                Domina la <strong>Adición y Sustracción de Decimales</strong> con llevada y sin llevada utilizando el <strong>Tablero de Valor Posicional</strong> interactivo en tiempo real.
+                            </p>
+                            
+                            <div className="flex flex-col sm:flex-row gap-6 sm:gap-16 mb-8 items-center justify-center w-full bg-white/5 p-5 sm:p-6 rounded-3xl border border-white/10">
+                                {players.map((p, i) => (
+                                    <div key={i} className="text-center group flex flex-col items-center">
+                                        <div className="text-5xl sm:text-7xl mb-2 transform group-hover:scale-125 group-hover:-translate-y-2 transition-all duration-300" style={{filter: `drop-shadow(0 15px 25px ${p.color}80)`}}>
+                                            {p.avatar}
+                                        </div>
+                                        <label className="text-[11px] text-slate-400 font-bold tracking-widest mb-1 uppercase">Nombre del Piloto {i+1} ✎</label>
+                                        <input 
+                                            type="text" 
+                                            value={p.name}
+                                            onChange={(e) => {
+                                                const newP = [...players];
+                                                newP[i].name = e.target.value.toUpperCase();
+                                                setPlayers(newP);
+                                            }}
+                                            className="font-orbitron font-black text-lg sm:text-2xl bg-black/50 rounded-xl border-b-4 border-t border-l border-r text-center outline-none w-44 sm:w-56 py-1.5 uppercase focus:border-white transition-all shadow-inner"
+                                            style={{ color: p.color, borderBottomColor: p.color, borderTopColor: `${p.color}30`, borderLeftColor: `${p.color}30`, borderRightColor: `${p.color}30` }}
+                                            maxLength={12}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-4 w-full justify-center items-center">
+                                <Button onClick={startGame} className="text-xl sm:text-2xl py-4 px-10 sm:px-14 rounded-full shadow-[0_0_50px_rgba(0,242,254,0.6)] animate-pulse-glow group">
+                                    ¡COMPETIR EN PISTA!
+                                    <PlayIcon className="w-7 h-7 group-hover:translate-x-2 transition-transform" />
+                                </Button>
+
+                                <Button variant="accent" onClick={() => openPracticeCatalog(0)} className="text-base sm:text-lg py-4 px-8 rounded-full">
+                                    <GridIcon />
+                                    Explorar los 16 Ejercicios
+                                </Button>
+                            </div>
+
+                            {/* Control rápido de Música Gamer en Portada */}
+                            <div className="mt-5 flex items-center gap-3 bg-slate-900/80 border border-cyan-500/30 px-4 py-2 rounded-full text-xs text-cyan-300">
+                                <MusicIcon className="w-4 h-4 text-pink-400 animate-bounce" />
+                                <span className="font-bold">Banda Sonora Gamer: {trackStyle === 0 ? 'Turbo Synthwave' : 'Cyber Carrera'}</span>
+                                <button
+                                    onClick={handleSwitchTrack}
+                                    className="bg-cyan-500/20 hover:bg-cyan-500/40 border border-cyan-400/50 px-2.5 py-0.5 rounded-full font-black text-[11px] text-white transition-all"
+                                >
+                                    🔊 Probar / Cambiar Pista
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- MODO LABORATORIO DIRECTO DE LOS 16 EJERCICIOS ---
+            if (gameState === 'PRACTICE' && currentQuestion) {
+                return (
+                    <div className="w-full h-screen bg-[#090914] text-white flex flex-col overflow-hidden relative select-none">
+                        <DynamicBackground />
+                        
+                        {/* Top Bar */}
+                        <div className="h-20 bg-black/70 backdrop-blur-xl border-b border-white/10 flex justify-between items-center px-4 sm:px-8 z-20 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <Button variant="secondary" onClick={() => setGameState('START')} className="py-2 px-4 text-xs sm:text-sm rounded-xl">
+                                    ← Menú
+                                </Button>
+                                <Button variant="primary" onClick={startGame} className="py-2 px-4 text-xs sm:text-sm rounded-xl">
+                                    🏎️ Ir a Carrera
+                                </Button>
+                            </div>
+
+                            <div className="text-center hidden md:block">
+                                <h2 className="font-orbitron font-black text-lg text-cyan-400">LABORATORIO DE LOS 16 EJERCICIOS DECIMALES</h2>
+                                <p className="text-xs text-slate-400">Resuelve en el Tablero de Valor Posicional con o sin llevada</p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <span className="bg-emerald-500/20 border border-emerald-400 text-emerald-300 px-3 py-1.5 rounded-xl font-black text-xs sm:text-sm">
+                                    Resueltos: {solvedIds.length} / 16
+                                </span>
+                                <button
+                                    onClick={handleToggleMusic}
+                                    title="Activar/Desactivar Música Gamer"
+                                    className={`px-3 py-2 rounded-xl border flex items-center gap-1.5 text-xs font-black transition-all ${musicOn && !isMuted ? 'bg-pink-600/30 border-pink-400 text-pink-200 shadow-[0_0_12px_rgba(254,9,121,0.4)]' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                                >
+                                    <MusicIcon className="w-4 h-4" />
+                                    <span className="hidden sm:inline">{musicOn && !isMuted ? 'BGM ON' : 'BGM OFF'}</span>
+                                </button>
+                                <button onClick={handleToggleAudio} className="p-2.5 text-white bg-slate-800 rounded-xl hover:bg-slate-700 border border-slate-600">
+                                    {isMuted ? <SpeakerXIcon /> : <SpeakerIcon />}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Selector numérico de los 16 ejercicios */}
+                        <div className="bg-slate-950/80 border-b border-white/10 px-4 py-2 flex items-center justify-center gap-1.5 flex-wrap z-20 shrink-0">
+                            {QUESTION_BANK.map((qItem, idx) => {
+                                const isDone = solvedIds.includes(qItem.id);
+                                const isCurrent = idx === practiceIndex;
+                                return (
+                                    <button
+                                        key={qItem.id}
+                                        onClick={() => openPracticeCatalog(idx)}
+                                        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl font-orbitron font-black text-xs sm:text-sm transition-all flex items-center justify-center border ${
+                                            isCurrent
+                                                ? 'bg-cyan-400 text-black border-white scale-110 shadow-[0_0_15px_#00f2fe]'
+                                                : isDone
+                                                ? 'bg-emerald-900/70 text-emerald-300 border-emerald-400'
+                                                : idx < 6
+                                                ? 'bg-pink-950/60 text-pink-300 border-pink-500/50 hover:border-pink-400'
+                                                : 'bg-slate-900 text-slate-400 border-slate-700 hover:border-cyan-400'
+                                        }`}
+                                        title={qItem.badge}
+                                    >
+                                        {idx + 1}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Contenido del Ejercicio + Tablero Posicional */}
+                        <div className="flex-1 overflow-y-auto p-3 sm:p-6 z-10 flex items-start justify-center">
+                            <div className="bg-black/85 backdrop-blur-2xl border-2 border-cyan-400/50 rounded-[2.5rem] p-4 sm:p-6 max-w-6xl w-full shadow-[0_0_80px_rgba(0,0,0,0.9)] grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                                
+                                {/* Columna Izquierda: Enunciado + Alternativas */}
+                                <div className="lg:col-span-5 flex flex-col justify-between h-full space-y-4">
+                                    <div>
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                            <span className="bg-pink-500/20 text-pink-300 border border-pink-400/40 px-3 py-1 rounded-full font-black text-xs uppercase tracking-wider">
+                                                {currentQuestion.badge}
+                                            </span>
+                                            <span className="text-2xl">{currentQuestion.icon}</span>
+                                        </div>
+
+                                        <div className="bg-slate-900/90 border border-white/10 p-4 rounded-2xl shadow-inner mb-4">
+                                            <h3 className="text-base sm:text-xl font-bold text-white leading-snug">
+                                                {currentQuestion.q}
+                                            </h3>
+                                        </div>
+
+                                        <p className="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-2">
+                                            Selecciona la Respuesta Final:
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
+                                            {currentQuestion.options.map((opt, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => handleAnswerClick(idx)}
+                                                    className="bg-slate-900/90 hover:bg-slate-800 border-2 border-slate-700 hover:border-cyan-400 p-3 rounded-2xl text-base sm:text-lg font-bold text-left transition-all active:scale-95 flex items-center group"
+                                                >
+                                                    <span className="bg-black text-cyan-400 border border-slate-700 group-hover:border-cyan-400 w-8 h-8 rounded-lg flex items-center justify-center mr-3 shrink-0 font-orbitron font-black text-sm">
+                                                        {['A','B','C','D'][idx]}
+                                                    </span>
+                                                    <span className="text-slate-100 group-hover:text-white">{opt}</span>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {feedback && (
+                                        <div className={`p-4 rounded-2xl border-2 animate-fade-in ${feedback.correct ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200' : 'bg-rose-950/80 border-rose-500 text-rose-200'}`}>
+                                            <div className="font-black text-base uppercase mb-1 flex items-center justify-between">
+                                                <span>{feedback.msg}</span>
+                                                {practiceIndex < 15 && feedback.correct && (
+                                                    <button
+                                                        onClick={() => openPracticeCatalog(practiceIndex + 1)}
+                                                        className="bg-emerald-400 text-black px-3 py-1 rounded-lg text-xs font-black uppercase"
+                                                    >
+                                                        Siguiente Ejercicio →
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <p className="text-xs sm:text-sm text-slate-200">{feedback.exp}</p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Columna Derecha: Tablero de Valor Posicional */}
+                                <div className="lg:col-span-7 w-full">
+                                    <PlaceValueBoard preset={currentQuestion.boardPreset} />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- PANTALLA JUEGO PRINCIPAL (PISTA + MODALES CON TABLERO POSICIONAL) ---
+            return (
+                <div className="w-full h-screen bg-[#090914] text-white flex flex-col overflow-hidden relative select-none">
+                    <DynamicBackground />
+                    
+                    {/* HUD Header */}
+                    <div className="h-24 bg-black/60 backdrop-blur-2xl border-b border-white/10 flex justify-between items-center px-4 sm:px-8 z-20 shrink-0 shadow-[0_15px_40px_rgba(0,0,0,0.8)] w-full">
+                        <div className="hidden xl:block">
+                            <h1 className="font-orbitron text-xl sm:text-2xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-pink-500">
+                                GRAN PREMIO DECIMALES
+                            </h1>
+                            <p className="text-xs text-slate-400 font-bold tracking-widest uppercase">
+                                Ejercicios Resueltos: {solvedIds.length}/16
+                            </p>
+                        </div>
+                        
+                        {/* Panel de Jugadores */}
+                        <div className="flex gap-3 sm:gap-6 justify-center">
+                            {players.map((p, i) => (
+                                <div key={p.id} className={`flex items-center gap-2 sm:gap-4 px-3 py-2 sm:px-5 sm:py-2.5 rounded-3xl transition-all duration-300 ${activePlayer === i ? 'bg-slate-800/95 scale-105 border-[3px] shadow-[0_0_30px_rgba(255,255,255,0.2)]' : 'bg-slate-900/40 border-2 border-transparent opacity-60'}`} style={{ borderColor: activePlayer === i ? p.color : 'transparent' }}>
+                                    <div className="text-2xl sm:text-4xl filter drop-shadow-xl bg-black p-1.5 sm:p-2 rounded-full border border-white/20">{p.avatar}</div>
+                                    <div className="flex flex-col justify-center">
+                                        <div className="font-orbitron font-black text-xs sm:text-sm uppercase tracking-wider leading-none" style={{color: p.color}}>{p.name}</div>
+                                        <div className="font-black text-base sm:text-xl text-white flex items-center gap-2 mt-0.5">
+                                            <span className="text-xs text-slate-400 hidden sm:inline">VUELTAS:</span>
+                                            <span className={p.laps > 0 ? 'text-yellow-400' : ''}>{p.laps}/{TARGET_LAPS}</span>
+                                            <span className="text-xs bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full border border-cyan-400/30">✓ {p.totalCorrect}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Controles Superiores */}
+                        <div className="flex items-center gap-2">
+                            <Button variant="accent" onClick={() => openPracticeCatalog(0)} className="px-3 py-2 text-xs sm:text-sm rounded-xl">
+                                <GridIcon />
+                                <span className="hidden sm:inline">16 Ejercicios</span>
+                            </Button>
+
+                            {/* Botones de Música de Competencia Gamer */}
+                            <div className="flex items-center bg-slate-900/90 border-2 border-pink-500/50 rounded-xl p-0.5 shadow-[0_0_15px_rgba(254,9,121,0.25)]">
+                                <button
+                                    onClick={handleToggleMusic}
+                                    title="Encender / Apagar Música de Competencia"
+                                    className={`px-2.5 py-2 rounded-lg flex items-center gap-1.5 text-xs font-orbitron font-black transition-all ${
+                                        musicOn && !isMuted
+                                            ? 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-[0_0_10px_rgba(254,9,121,0.6)]'
+                                            : 'text-slate-400 hover:text-white'
+                                    }`}
+                                >
+                                    <MusicIcon className={`w-4 h-4 ${musicOn && !isMuted ? 'animate-bounce' : ''}`} />
+                                    <span className="hidden md:inline">{musicOn && !isMuted ? 'MÚSICA ON' : 'MÚSICA OFF'}</span>
+                                </button>
+                                <button
+                                    onClick={handleSwitchTrack}
+                                    title="Cambiar Pista Gamer"
+                                    className="px-2 py-2 text-[11px] font-orbitron font-bold text-cyan-300 hover:text-white border-l border-white/10 transition-colors"
+                                >
+                                    P{trackStyle + 1}
+                                </button>
+                            </div>
+
+                            <button onClick={handleToggleAudio} title="Silenciar Todo" className="p-2.5 sm:p-3 text-white bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors border-2 border-slate-600">
+                                {isMuted ? <SpeakerXIcon /> : <SpeakerIcon />}
+                            </button>
+                            <Button variant={teacherMode ? 'danger' : 'secondary'} onClick={() => setTeacherMode(!teacherMode)} className="px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-600 hidden lg:flex">
+                                Docente {teacherMode ? 'ON' : 'OFF'}
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Tablero de Pista */}
+                    {gameState === 'PLAY' && (
+                        <div className="flex-1 relative p-2 sm:p-6 flex items-center justify-center overflow-hidden w-full h-full">
+                            
+                            <div className="w-[98%] h-[96%] relative z-10 flex items-center justify-center">
+                                <div className="w-full h-full grid grid-cols-10 grid-rows-6 gap-1.5 sm:gap-3 relative p-3 sm:p-8 bg-black/45 rounded-[3rem] backdrop-blur-sm border border-white/10 shadow-[inset_0_0_90px_rgba(0,0,0,1)]">
+                                    
+                                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-0" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                        <defs>
+                                            <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+                                                <feGaussianBlur stdDeviation="1.5" result="blur1" />
+                                                <feGaussianBlur stdDeviation="3" result="blur2" />
+                                                <feMerge>
+                                                    <feMergeNode in="blur2" />
+                                                    <feMergeNode in="blur1" />
+                                                    <feMergeNode in="SourceGraphic" />
+                                                </feMerge>
+                                            </filter>
+                                        </defs>
+                                        <path d={buildPath()} fill="none" stroke={COLORS.primary} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" filter="url(#neonGlow)"/>
+                                        <path d={buildPath()} fill="none" stroke="#fff" strokeWidth="0.4" strokeLinejoin="round" strokeLinecap="round" strokeDasharray="2 3" className="animate-flow-energy"/>
+                                    </svg>
+
+                                    {BOARD_SPACES.map((tile, idx) => renderTileContent(tile, idx))}
+                                    
+                                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-0">
+                                        <div className="text-center opacity-25">
+                                            <TrophyIcon className="w-24 h-24 sm:w-44 sm:h-44 mx-auto text-cyan-400 mb-2" />
+                                            <div className="font-orbitron text-xl sm:text-4xl font-black tracking-[0.4em] text-cyan-400">VALOR POSICIONAL</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Overlays y Modales de Turno */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-40 p-2 sm:p-4">
+                                {turnPhase === 'WAITING' && (
+                                    <div className="bg-black/90 backdrop-blur-2xl p-8 sm:p-12 rounded-[3.5rem] shadow-[0_40px_90px_rgba(0,0,0,1)] border-4 border-white/15 text-center pointer-events-auto transform transition-transform hover:scale-105 group relative overflow-hidden flex flex-col items-center">
+                                        <div className="text-7xl sm:text-9xl mb-4 animate-bounce" style={{filter: `drop-shadow(0 15px 30px ${players[activePlayer].color})`}}>{players[activePlayer].avatar}</div>
+                                        <h2 className="font-orbitron text-2xl sm:text-4xl font-black mb-6 tracking-wider text-white uppercase" style={{ color: players[activePlayer].color }}>
+                                            Turno: {players[activePlayer].name}
+                                        </h2>
+                                        <Button onClick={rollDice} className="text-2xl sm:text-4xl py-5 px-12 sm:px-16 rounded-full w-full shadow-[0_0_40px_rgba(0,242,254,0.4)]">
+                                            🎲 Lanzar Dado
+                                        </Button>
+                                    </div>
+                                )}
+
+                                {turnPhase === 'ROLLING' && (
+                                    <div className="bg-slate-900/95 p-12 sm:p-16 rounded-[3.5rem] border-[6px] border-cyan-400 shadow-[0_0_120px_rgba(0,242,254,0.8)] flex items-center justify-center transform rotate-3">
+                                        <div className="font-orbitron text-8xl sm:text-9xl font-black text-white animate-spin-fast drop-shadow-[0_0_30px_rgba(255,255,255,1)]">{currentDice}</div>
+                                    </div>
+                                )}
+                                
+                                {turnPhase === 'MOVING' && (
+                                    <div className="bg-black/85 px-12 py-6 rounded-full border-4 border-white/20 shadow-2xl backdrop-blur-xl animate-pulse">
+                                        <div className="font-orbitron text-6xl sm:text-8xl font-black text-cyan-400">{currentDice}</div>
+                                    </div>
+                                )}
+
+                                {turnPhase === 'SPECIAL_MSG' && specialMsg && (
+                                    <div className="bg-slate-900/95 backdrop-blur-3xl p-8 sm:p-12 rounded-[3rem] shadow-[0_0_150px_rgba(0,0,0,0.9)] border-[5px] border-yellow-400 text-center pointer-events-auto animate-bounce-slow max-w-xl">
+                                        <h2 className="font-orbitron text-3xl sm:text-5xl font-black mb-4 text-yellow-400 uppercase tracking-wider">{specialMsg.title}</h2>
+                                        <p className="text-xl sm:text-2xl text-white font-bold">{specialMsg.desc}</p>
+                                    </div>
+                                )}
+
+                                {/* MODAL DE PREGUNTA + TABLERO DE VALOR POSICIONAL */}
+                                {turnPhase === 'QUESTION' && currentQuestion && (
+                                    <div className="bg-black/95 backdrop-blur-3xl p-4 sm:p-6 md:p-8 rounded-[2.5rem] shadow-[0_0_200px_rgba(0,0,0,1)] border-[3px] border-cyan-400 max-w-6xl w-full max-h-[94vh] overflow-y-auto pointer-events-auto flex flex-col relative animate-fade-in">
+                                        {/* Barra de progreso de tiempo */}
+                                        <div className="absolute top-0 left-0 h-2.5 bg-gradient-to-r from-cyan-400 via-pink-500 to-yellow-400 transition-all duration-1000 ease-linear" style={{width: `${Math.min(100, (timeLeft / currentQuestion.time) * 100)}%`}}></div>
+                                        
+                                        {/* Cabecera de la pregunta */}
+                                        <div className="flex flex-wrap justify-between items-center gap-2 mb-4 pb-3 border-b border-white/10 mt-1">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="bg-cyan-950 text-cyan-300 border border-cyan-700 px-3 py-1 rounded-full font-orbitron font-black text-xs sm:text-sm uppercase">
+                                                    NIVEL {currentQuestion.level} {currentQuestion.isResorteJump && " • ¡SALTO TURBO!"}
+                                                </span>
+                                                <span className="bg-pink-500/20 text-pink-300 border border-pink-500/40 px-3 py-1 rounded-full font-bold text-xs">
+                                                    {currentQuestion.badge}
+                                                </span>
+                                            </div>
+
+                                            <div className={`flex items-center gap-2 px-4 py-1.5 rounded-2xl border-2 font-orbitron font-black text-xl sm:text-2xl ${timeLeft <= 10 ? 'border-red-500 text-red-400 bg-red-950/50 animate-pulse' : 'border-cyan-400 text-cyan-300 bg-slate-900'}`}>
+                                                <ClockIcon className="w-5 h-5 sm:w-6 sm:h-6"/>
+                                                <span>{teacherMode ? '∞' : `${timeLeft}s`}</span>
+                                            </div>
+                                        </div>
+
+                                        {/* Cuerpo dividido en 2 columnas: Problema/Opciones + Tablero Posicional */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
+                                            {/* Izquierda: Enunciado y Alternativas */}
+                                            <div className="lg:col-span-5 flex flex-col space-y-3">
+                                                <div className="bg-slate-900/90 border border-white/15 p-4 rounded-2xl shadow-inner flex items-start gap-3">
+                                                    <span className="text-3xl sm:text-4xl shrink-0">{currentQuestion.icon}</span>
+                                                    <h2 className="text-base sm:text-xl font-bold leading-snug text-white">
+                                                        {currentQuestion.q}
+                                                    </h2>
+                                                </div>
+
+                                                <div className="text-xs font-bold uppercase tracking-wider text-cyan-300 pt-1">
+                                                    1° Calcula en el Tablero Posicional → 2° Marca tu respuesta:
+                                                </div>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-2.5">
+                                                    {currentQuestion.options.map((opt, idx) => (
+                                                        <button 
+                                                            key={idx}
+                                                            onClick={() => handleAnswerClick(idx)}
+                                                            className="bg-slate-900/90 hover:bg-slate-800 border-2 border-slate-700 hover:border-cyan-400 p-3 sm:p-3.5 rounded-2xl text-base sm:text-xl font-bold text-left transition-all active:scale-95 flex items-center shadow-md group hover:shadow-[0_0_20px_rgba(0,242,254,0.3)]"
+                                                        >
+                                                            <span className="bg-black text-slate-300 border border-slate-600 group-hover:border-cyan-400 group-hover:text-cyan-400 w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center mr-3 shrink-0 font-orbitron font-black text-base sm:text-lg transition-colors">
+                                                                {['A','B','C','D'][idx]}
+                                                            </span>
+                                                            <span className="leading-tight text-slate-100 group-hover:text-white">{opt}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Derecha: Tablero de Valor Posicional Interactivo */}
+                                            <div className="lg:col-span-7 w-full">
+                                                <PlaceValueBoard preset={currentQuestion.boardPreset} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* MODAL DE RETROALIMENTACIÓN */}
+                                {turnPhase === 'FEEDBACK' && feedback && (
+                                    <div className={`bg-black/95 backdrop-blur-3xl p-8 sm:p-12 rounded-[3rem] shadow-[0_0_200px_rgba(0,0,0,1)] border-[5px] ${feedback.correct ? 'border-green-400' : 'border-red-500'} max-w-2xl w-full mx-4 pointer-events-auto text-center flex flex-col items-center relative overflow-hidden animate-fade-in`}>
+                                        <div className={`w-20 h-20 sm:w-28 sm:h-28 rounded-full flex items-center justify-center mb-4 border-4 shadow-[0_0_50px_currentColor] ${feedback.correct ? 'bg-green-950 border-green-400 text-green-400' : 'bg-red-950 border-red-500 text-red-500'}`}>
+                                            {feedback.correct ? <CheckIcon className="w-12 h-12 sm:w-16 sm:h-16"/> : <XIcon className="w-12 h-12 sm:w-16 sm:h-16"/>}
+                                        </div>
+                                        <h2 className={`font-orbitron text-3xl sm:text-5xl font-black mb-4 uppercase tracking-wider ${feedback.correct ? 'text-green-400' : 'text-red-500'}`}>
+                                            {feedback.msg}
+                                        </h2>
+                                        
+                                        <div className="bg-slate-900/90 p-5 sm:p-6 rounded-2xl border border-white/15 w-full mb-6 text-left shadow-inner">
+                                            <p className="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-1">Explicación Paso a Paso:</p>
+                                            <p className="text-base sm:text-xl text-slate-200 font-medium leading-relaxed">{feedback.exp}</p>
+                                        </div>
+
+                                        <Button onClick={closeFeedbackAndEndTurn} variant={feedback.correct ? 'success' : 'danger'} className="text-xl sm:text-2xl py-4 sm:py-5 px-12 rounded-full w-full">
+                                            {feedback.correct ? '¡CONTINUAR RACHA!' : 'PASAR TURNO'}
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* PANTALLA DE FIN DEL JUEGO */}
+                    {gameState === 'END' && (
+                        <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 relative z-30 bg-black/90 backdrop-blur-2xl rounded-[3rem] m-4 sm:m-8 border-2 border-white/10 shadow-2xl overflow-y-auto">
+                            <div className="absolute inset-0 overflow-hidden rounded-[3rem] pointer-events-none">
+                                <div className="w-full h-full opacity-100 animate-[confetti-fall_4s_linear_infinite]" style={{backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect width='8' height='20' fill='%2300f2fe' transform='rotate(45)'/%3E%3Crect x='20' y='20' width='12' height='12' fill='%23facc15' rx='6'/%3E%3Crect x='10' y='30' width='8' height='15' fill='%23fe0979' transform='rotate(-30)'/%3E%3C/svg%3E")`, backgroundSize: '100px 100px'}} />
+                            </div>
+                            
+                            <TrophyIcon className="w-24 h-24 sm:w-36 sm:h-36 mb-4 animate-bounce filter drop-shadow-[0_0_40px_rgba(250,204,21,1)]"/>
+                            <h2 className="font-orbitron text-4xl sm:text-7xl font-black mb-8 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-yellow-500 to-orange-500 drop-shadow-2xl tracking-tight uppercase text-center">
+                                ¡META ALCANZADA!
+                            </h2>
+                            
+                            <div className="flex flex-col md:flex-row gap-6 sm:gap-12 mb-8 w-full max-w-4xl justify-center">
+                                {[...players].sort((a,b) => b.laps - a.laps || b.totalCorrect - a.totalCorrect).map((p, i) => (
+                                    <div key={p.id} className={`flex-1 bg-slate-900/90 p-6 sm:p-8 rounded-[2.5rem] border-4 flex flex-col items-center relative overflow-hidden backdrop-blur-md ${i === 0 ? 'border-yellow-400 scale-105 z-10 shadow-[0_0_80px_rgba(250,204,21,0.4)]' : 'border-slate-700 opacity-90'}`}>
+                                        {i === 0 && <div className="absolute top-4 left-4 bg-yellow-400 text-black font-black px-4 py-1 rounded-full text-xs sm:text-sm tracking-widest shadow-lg">🏆 CAMPEÓN DECIMAL</div>}
+                                        <div className="text-6xl sm:text-8xl mb-3 filter drop-shadow-2xl">{p.avatar}</div>
+                                        <h3 className="font-orbitron text-2xl sm:text-4xl font-black mb-6 text-white uppercase tracking-wider" style={{ color: p.color }}>{p.name}</h3>
+                                        
+                                        <div className="w-full space-y-3">
+                                            <div className="bg-black w-full p-4 rounded-2xl flex justify-between items-center border border-white/10">
+                                                <span className="text-slate-400 font-bold text-sm sm:text-lg uppercase">Vueltas</span>
+                                                <span className="font-orbitron font-black text-2xl sm:text-4xl text-yellow-400">{p.laps}</span>
+                                            </div>
+                                            <div className="bg-black w-full p-4 rounded-2xl flex justify-between items-center border border-white/10">
+                                                <span className="text-slate-400 font-bold text-sm sm:text-lg uppercase">Cálculos Correctos</span>
+                                                <span className="font-orbitron font-black text-2xl sm:text-4xl text-cyan-400">{p.totalCorrect}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex flex-wrap gap-4 justify-center relative z-50">
+                                <Button onClick={startGame} className="text-xl sm:text-2xl py-4 px-10 rounded-full shadow-[0_0_40px_rgba(0,242,254,0.5)]">
+                                    VOLVER A COMPETIR
+                                </Button>
+                                <Button variant="accent" onClick={() => openPracticeCatalog(0)} className="text-lg sm:text-xl py-4 px-8 rounded-full">
+                                    REVISAR LOS 16 EJERCICIOS
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
